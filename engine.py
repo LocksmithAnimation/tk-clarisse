@@ -243,8 +243,8 @@ def refresh_engine(engine_name, prev_context, menu_name):
     # This is a File->New call, so we just leave the engine in the current
     # context and move on.
     if scene_name == "":
-        if prev_context != tank.platform.current_engine().context:
-            current_engine.change_context(ctx)
+        if prev_context != current_engine.context:
+            current_engine.change_context(prev_context)
         return
 
     # determine the tk instance and ctx to use:
@@ -355,7 +355,7 @@ def create_sgtk_disabled_menu(menu_name):
     sg_menu = get_sgtk_root_menu(menu_name)
     menu_item = menu_name + ">Sgtk is disabled."
     ix.shotgun.menu_callbacks[menu_item] = sgtk_disabled_message
-    menu.add_command_as_script(
+    sg_menu.add_command_as_script(
         menu_name + ">Sgtk is disabled.",
         "ix.shotgun.menu_callbacks[%s]" % menu_item,
     )
@@ -376,6 +376,10 @@ class ClarisseEngine(Engine):
     """
     Toolkit engine for Clarisse.
     """
+
+    _DIALOG_PARENT = None
+    _WIN32_CLARISSE_MAIN_HWND = None
+    _PROXY_WIN_HWND = None
 
     def __get_platform_resource_path(self, filename):
         """
@@ -501,6 +505,7 @@ class ClarisseEngine(Engine):
         utf8 = QtCore.QTextCodec.codecForName("utf-8")
         QtCore.QTextCodec.setCodecForCStrings(utf8)
         self.logger.debug("set utf-8 codec for widget text")
+        self.win_32_utils = self.import_module("win_32_utils")
 
     def init_engine(self):
         """
@@ -632,22 +637,33 @@ class ClarisseEngine(Engine):
 
         qt_app = QtGui.QApplication.instance()
         if qt_app is None:
-
             self.log_debug("Initialising main QApplication...")
-            qt_app = QtGui.QApplication([])
+            app_name = "Shotgun Toolkit for Substance Painter"
+            qt_app = QtGui.QApplication([app_name])
             qt_app.setWindowIcon(QtGui.QIcon(self.icon_256))
             qt_app.setQuitOnLastWindowClosed(False)
 
-            # set up the dark style
+            if sys.platform == "win32":
+                # for windows, we create a proxy window parented to the
+                # main application window that we can then set as the owner
+                # for all Toolkit dialogs
+                self._DIALOG_PARENT = self._win32_get_proxy_window()
+            else:
+                self._DIALOG_PARENT = QtGui.QApplication.activeWindow()
+    
+            # Make the QApplication use the dark theme. Must be called after the QApplication is instantiated
             self._initialize_dark_look_and_feel()
 
+        self.logger.debug("APPING UP")
         import pyqt_clarisse
         pyqt_clarisse.exec_(qt_app)
+        self.logger.debug("PARENT: {}".format(self._DIALOG_PARENT))
 
     def post_app_init(self):
         """
         Called when all apps have initialized
         """
+        self.logger.debug("POST INIT")
         self._initialise_qapplication()
 
         # for some readon this engine command get's lost so we add it back
@@ -862,11 +878,126 @@ class ClarisseEngine(Engine):
                 exception,
             )
 
+    def _win32_get_clarisse_main_hwnd(self):
+        """
+        Windows specific method to find the main Clarisse window
+        handle (HWND)
+        """
+        self.logger.debug("MAIN")
+        if not self._WIN32_CLARISSE_MAIN_HWND:
+            found_hwnds = self.win_32_utils.win_32_api.find_windows(
+                class_name="FLTK",
+            )
+            import ctypes
+            RealGetWindowClass = ctypes.windll.user32.RealGetWindowClassW
+            for found in found_hwnds:
+                    buffer_len = 1024
+                    unicode_buffer = ctypes.create_unicode_buffer(buffer_len)
+                    RealGetWindowClass(found, unicode_buffer, buffer_len)
+                    window_class = unicode_buffer.value
+                    self.logger.debug("Text: {}".format(self.win_32_utils.win_32_api.safe_get_window_text(found)))
+                    self.logger.debug("Class: {}".format(window_class))
+            if found_hwnds:
+                self._WIN32_CLARISSE_MAIN_HWND = found_hwnds[1]
+        return self._WIN32_CLARISSE_MAIN_HWND
+
+    def _win32_get_proxy_window(self):
+        """
+        Windows-specific method to get the proxy window that will 'own' all
+        Toolkit dialogs.  This will be parented to the main Clarisse
+        application.
+
+        :returns: A QWidget that has been parented to Clarisse's window.
+        """
+        # Get the main Clarisse window:
+        self.logger.debug("PROXY")
+        sp_hwnd = self._win32_get_clarisse_main_hwnd()
+        win32_proxy_win = None
+        proxy_win_hwnd = None
+
+        if sp_hwnd:
+            from sgtk.platform.qt import QtGui, QtCore
+
+            # Create the proxy QWidget.
+            win32_proxy_win = QtGui.QWidget()
+            window_title = "Shotgun Toolkit Parent Widget"
+            win32_proxy_win.setWindowTitle(window_title)
+            win32_proxy_win.setGeometry(20, 20, 50, 50)
+
+            # We have to take different approaches depending on whether
+            # we're using Qt4 (PySide) or Qt5 (PySide2). The functionality
+            # needed to turn a Qt5 WId into an HWND is not exposed in PySide2,
+            # so we can't do what we did below for Qt4.
+            if QtCore.__version__.startswith("4."):
+                proxy_win_hwnd = self.win_32_utils.win_32_api.qwidget_winid_to_hwnd(
+                    win32_proxy_win.winId(),
+                )
+            else:
+                # With PySide2, we're required to look up our proxy parent
+                # widget's HWND the hard way, following the same logic used
+                # to find Clarisse's main window. To do that, we actually have
+                # to show our widget so that Windows knows about it. We can make
+                # it effectively invisible if we zero out its size, so we do that,
+                # show the widget, and then look up its HWND by window title before
+                # hiding it.
+                win32_proxy_win.setGeometry(0, 0, 0, 0)
+                win32_proxy_win.show()
+
+                try:
+                    proxy_win_hwnd_found = self.win_32_utils.win_32_api.find_windows(
+                        stop_if_found=True,
+                        class_name="Qt5QWindowIcon",
+                        process_id=os.getpid(),
+                    )
+                finally:
+                    win32_proxy_win.hide()
+
+                if proxy_win_hwnd_found:
+                    proxy_win_hwnd = proxy_win_hwnd_found[0]
+        else:
+            self.logger.debug(
+                "Unable to determine the HWND of Clarisse itself. This means "
+                "that we can't properly setup window parenting for Toolkit apps."
+            )
+
+        # Parent to the Clarisse application window if we found everything
+        # we needed. If we didn't find our proxy window for some reason, we
+        # will return None below. In that case, we'll just end up with no
+        # window parenting, but apps will still launch.
+        if proxy_win_hwnd is None:
+            self.logger.warning(
+                "Unable setup window parenting properly. Dialogs shown will "
+                "not be parented to Clarisse, but they will still function "
+                "properly otherwise."
+            )
+        else:
+            # Set the window style/flags. We don't need or want our Python
+            # dialogs to notify the Photoshop application window when they're
+            # opened or closed, so we'll disable that behavior.
+            win_ex_style = self.win_32_utils.win_32_api.GetWindowLong(
+                proxy_win_hwnd,
+                self.win_32_utils.win_32_api.GWL_EXSTYLE,
+            )
+
+            self.win_32_utils.win_32_api.SetWindowLong(
+                proxy_win_hwnd,
+                self.win_32_utils.win_32_api.GWL_EXSTYLE, 
+                win_ex_style | self.win_32_utils.win_32_api.WS_EX_NOPARENTNOTIFY,
+            )
+            self.win_32_utils.win_32_api.SetParent(proxy_win_hwnd, sp_hwnd)
+            self._PROXY_WIN_HWND = proxy_win_hwnd
+
+        return win32_proxy_win
+
     def _get_dialog_parent(self):
         """
         Clarisse is not Qt Based so we do not have anything to return here.
         """
-        return None
+        self.logger.debug("GET PARENT: {}".format(self._DIALOG_PARENT))
+        if not self._DIALOG_PARENT:
+            self._initialise_qapplication()
+            
+        return self._DIALOG_PARENT
 
     @property
     def has_ui(self):
