@@ -505,7 +505,8 @@ class ClarisseEngine(Engine):
         utf8 = QtCore.QTextCodec.codecForName("utf-8")
         QtCore.QTextCodec.setCodecForCStrings(utf8)
         self.logger.debug("set utf-8 codec for widget text")
-        self.win_32_utils = self.import_module("win_32_utils")
+        win_32_utils = self.import_module("win_32_utils")
+        self.win_32_api = win_32_utils.win_32_api
 
     def init_engine(self):
         """
@@ -878,27 +879,27 @@ class ClarisseEngine(Engine):
                 exception,
             )
 
+    def process_start_time_from_hwnd(self, hwnd):
+        import psutil
+        import ctypes
+        win_process_id = ctypes.c_long()
+        self.win_32_api.GetWindowThreadProcessId(hwnd, ctypes.byref(win_process_id))
+        process = psutil.Process(win_process_id.value)
+        return process.create_time()
+    
     def _win32_get_clarisse_main_hwnd(self):
         """
         Windows specific method to find the main Clarisse window
         handle (HWND)
         """
-        self.logger.debug("MAIN")
         if not self._WIN32_CLARISSE_MAIN_HWND:
-            found_hwnds = self.win_32_utils.win_32_api.find_windows(
+            found_hwnds = self.win_32_api.find_windows(
                 class_name="FLTK",
+                stop_if_found=False
             )
-            import ctypes
-            RealGetWindowClass = ctypes.windll.user32.RealGetWindowClassW
-            for found in found_hwnds:
-                    buffer_len = 1024
-                    unicode_buffer = ctypes.create_unicode_buffer(buffer_len)
-                    RealGetWindowClass(found, unicode_buffer, buffer_len)
-                    window_class = unicode_buffer.value
-                    self.logger.debug("Text: {}".format(self.win_32_utils.win_32_api.safe_get_window_text(found)))
-                    self.logger.debug("Class: {}".format(window_class))
             if found_hwnds:
-                self._WIN32_CLARISSE_MAIN_HWND = found_hwnds[1]
+                found_hwnds = sorted(found_hwnds, key=self.process_start_time_from_hwnd)
+                self._WIN32_CLARISSE_MAIN_HWND = found_hwnds[-1]
         return self._WIN32_CLARISSE_MAIN_HWND
 
     def _win32_get_proxy_window(self):
@@ -929,7 +930,7 @@ class ClarisseEngine(Engine):
             # needed to turn a Qt5 WId into an HWND is not exposed in PySide2,
             # so we can't do what we did below for Qt4.
             if QtCore.__version__.startswith("4."):
-                proxy_win_hwnd = self.win_32_utils.win_32_api.qwidget_winid_to_hwnd(
+                proxy_win_hwnd = self.win_32_api.qwidget_winid_to_hwnd(
                     win32_proxy_win.winId(),
                 )
             else:
@@ -944,7 +945,7 @@ class ClarisseEngine(Engine):
                 win32_proxy_win.show()
 
                 try:
-                    proxy_win_hwnd_found = self.win_32_utils.win_32_api.find_windows(
+                    proxy_win_hwnd_found = self.win_32_api.find_windows(
                         stop_if_found=True,
                         class_name="Qt5QWindowIcon",
                         process_id=os.getpid(),
@@ -974,17 +975,17 @@ class ClarisseEngine(Engine):
             # Set the window style/flags. We don't need or want our Python
             # dialogs to notify the Photoshop application window when they're
             # opened or closed, so we'll disable that behavior.
-            win_ex_style = self.win_32_utils.win_32_api.GetWindowLong(
+            win_ex_style = self.win_32_api.GetWindowLong(
                 proxy_win_hwnd,
-                self.win_32_utils.win_32_api.GWL_EXSTYLE,
+                self.win_32_api.GWL_EXSTYLE,
             )
 
-            self.win_32_utils.win_32_api.SetWindowLong(
+            self.win_32_api.SetWindowLong(
                 proxy_win_hwnd,
-                self.win_32_utils.win_32_api.GWL_EXSTYLE, 
-                win_ex_style | self.win_32_utils.win_32_api.WS_EX_NOPARENTNOTIFY,
+                self.win_32_api.GWL_EXSTYLE, 
+                win_ex_style | self.win_32_api.WS_EX_NOPARENTNOTIFY,
             )
-            self.win_32_utils.win_32_api.SetParent(proxy_win_hwnd, sp_hwnd)
+            self.win_32_api.SetParent(proxy_win_hwnd, sp_hwnd)
             self._PROXY_WIN_HWND = proxy_win_hwnd
 
         return win32_proxy_win
