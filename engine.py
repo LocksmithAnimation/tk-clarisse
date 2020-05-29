@@ -655,16 +655,13 @@ class ClarisseEngine(Engine):
             # Make the QApplication use the dark theme. Must be called after the QApplication is instantiated
             self._initialize_dark_look_and_feel()
 
-        self.logger.debug("APPING UP")
         import pyqt_clarisse
         pyqt_clarisse.exec_(qt_app)
-        self.logger.debug("PARENT: {}".format(self._DIALOG_PARENT))
 
     def post_app_init(self):
         """
         Called when all apps have initialized
         """
-        self.logger.debug("POST INIT")
         self._initialise_qapplication()
 
         # for some readon this engine command get's lost so we add it back
@@ -886,6 +883,7 @@ class ClarisseEngine(Engine):
         self.win_32_api.GetWindowThreadProcessId(hwnd, ctypes.byref(win_process_id))
         process = psutil.Process(win_process_id.value)
         return process.create_time()
+        
     
     def _win32_get_clarisse_main_hwnd(self):
         """
