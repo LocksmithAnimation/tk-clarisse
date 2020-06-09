@@ -875,16 +875,7 @@ class ClarisseEngine(Engine):
                 "operate correctly! Error reported: %s",
                 exception,
             )
-
-    def process_start_time_from_hwnd(self, hwnd):
-        import psutil
-        import ctypes
-        win_process_id = ctypes.c_long()
-        self.win_32_api.GetWindowThreadProcessId(hwnd, ctypes.byref(win_process_id))
-        process = psutil.Process(win_process_id.value)
-        return process.create_time()
-        
-    
+   
     def _win32_get_clarisse_main_hwnd(self):
         """
         Windows specific method to find the main Clarisse window
@@ -892,11 +883,11 @@ class ClarisseEngine(Engine):
         """
         if not self._WIN32_CLARISSE_MAIN_HWND:
             found_hwnds = self.win_32_api.find_windows(
+                process_id=os.getpid(),
                 class_name="FLTK",
                 stop_if_found=False
             )
             if found_hwnds:
-                found_hwnds = sorted(found_hwnds, key=self.process_start_time_from_hwnd)
                 self._WIN32_CLARISSE_MAIN_HWND = found_hwnds[-1]
         return self._WIN32_CLARISSE_MAIN_HWND
 
@@ -909,7 +900,6 @@ class ClarisseEngine(Engine):
         :returns: A QWidget that has been parented to Clarisse's window.
         """
         # Get the main Clarisse window:
-        self.logger.debug("PROXY")
         sp_hwnd = self._win32_get_clarisse_main_hwnd()
         win32_proxy_win = None
         proxy_win_hwnd = None
@@ -992,7 +982,6 @@ class ClarisseEngine(Engine):
         """
         Clarisse is not Qt Based so we do not have anything to return here.
         """
-        self.logger.debug("GET PARENT: {}".format(self._DIALOG_PARENT))
         if not self._DIALOG_PARENT:
             self._initialise_qapplication()
             
