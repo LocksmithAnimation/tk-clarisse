@@ -9,3 +9,5 @@
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
 from .menu_generation import MenuGenerator
+from .proxy_widget import ProxyWidget
+from . import pyside_clarisse

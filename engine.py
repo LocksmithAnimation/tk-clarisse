@@ -330,9 +330,10 @@ def clear_sgtk_menu(menu_name):
         # don't create menu in not interactive mode
         return
 
-    sg_menu = get_sgtk_root_menu(menu_name)
-    sg_menu.remove_all_commands()
-    ix.shotgun.menu_callbacks = {}
+    if get_sgtk_root_menu(menu_name):
+        menu = ix.application.get_main_menu()
+        menu.remove_all_commands(menu_name + ">")
+        ix.shotgun.menu_callbacks = {}
 
 
 def get_sgtk_root_menu(menu_name):
@@ -433,23 +434,6 @@ class ClarisseEngine(Engine):
                 },
             )
 
-    def __register_reload_command(self):
-        """
-        Registers a "Reload and Restart" command with the engine if any
-        running apps are registered via a dev descriptor.
-        """
-        from tank.platform import restart
-
-        self.register_command(
-            "Reload and Restart",
-            restart,
-            {
-                "short_name": "restart",
-                "icon": self.__get_platform_resource_path("reload_256.png"),
-                "type": "context_menu",
-            },
-        )
-
     @property
     def context_change_allowed(self):
         """
@@ -489,6 +473,12 @@ class ClarisseEngine(Engine):
             pass
         return host_info
 
+    @property
+    def tk_clarisse(self):
+        if not self._tk_clarisse:
+            self._tk_clarisse = self.import_module("tk_clarisse")
+        return self._tk_clarisse
+
     ###########################################################################
     # init and destroy
 
@@ -507,6 +497,8 @@ class ClarisseEngine(Engine):
         self.logger.debug("set utf-8 codec for widget text")
         win_32_utils = self.import_module("win_32_utils")
         self.win_32_api = win_32_utils.win_32_api
+        self._tk_clarisse = None
+        self.__qt_dialogs = []
 
     def init_engine(self):
         """
@@ -584,9 +576,6 @@ class ClarisseEngine(Engine):
                 )
                 os.environ["SHOTGUN_SKIP_QTWEBENGINEWIDGETS_IMPORT"] = "1"
 
-        # add qt paths and dlls
-        self._init_pyside()
-
         # default menu name is Shotgun but this can be overriden
         # in the configuration to be Sgtk in case of conflicts
         self._menu_name = "Shotgun"
@@ -621,8 +610,7 @@ class ClarisseEngine(Engine):
             self._menu_handle = get_sgtk_root_menu(self._menu_name)
 
             # create our menu handler
-            tk_clarisse = self.import_module("tk_clarisse")
-            self._menu_generator = tk_clarisse.MenuGenerator(
+            self._menu_generator = self.tk_clarisse.MenuGenerator(
                 self, self._menu_handle
             )
             self._menu_generator.create_menu()
@@ -643,29 +631,21 @@ class ClarisseEngine(Engine):
             qt_app = QtGui.QApplication([app_name])
             qt_app.setWindowIcon(QtGui.QIcon(self.icon_256))
             qt_app.setQuitOnLastWindowClosed(False)
-
-            if sys.platform == "win32":
-                # for windows, we create a proxy window parented to the
-                # main application window that we can then set as the owner
-                # for all Toolkit dialogs
-                self._DIALOG_PARENT = self._win32_get_proxy_window()
-            else:
-                self._DIALOG_PARENT = QtGui.QApplication.activeWindow()
     
             # Make the QApplication use the dark theme. Must be called after the QApplication is instantiated
             self._initialize_dark_look_and_feel()
 
-        import pyqt_clarisse
-        pyqt_clarisse.exec_(qt_app)
+        self.tk_clarisse.pyside_clarisse.exec_(qt_app)
 
     def post_app_init(self):
         """
         Called when all apps have initialized
         """
-        self._initialise_qapplication()
+        if self.has_ui:
+            self._initialise_qapplication()
 
         # for some readon this engine command get's lost so we add it back
-        self.__register_reload_command()
+        # self.__register_reload_command()
         self.create_shotgun_menu()
 
         # Run a series of app instance commands at startup.
@@ -684,7 +664,7 @@ class ClarisseEngine(Engine):
         # restore the open log folder, it get's removed whenever the first time
         # a context is changed
         self.__register_open_log_folder_command()
-        self.__register_reload_command()
+        # self.__register_reload_command()
 
         if self.get_setting("automatic_context_switch", True):
             # We need to stop watching, and then replace with a new watcher
@@ -803,78 +783,23 @@ class ClarisseEngine(Engine):
         Stops watching scene events and tears down menu.
         """
         self.logger.debug("%s: Destroying...", self)
+        clear_sgtk_menu(self._menu_name)
+
+        for dialog in self.__qt_dialogs:
+            dialog.hide()
+            dialog.setParent(None)
+            dialog.deleteLater()
+
+        # Set our parent widget back to being owned by the window manager
+        # instead of Clarisse's application window.
+        if self._PROXY_WIN_HWND and sys.platform == "win32":
+            self.win_32_api.SetParent(self._PROXY_WIN_HWND, 0)
+            self._DIALOG_PARENT.deleteLater()
+            self._DIALOG_PARENT = None
 
         if self.get_setting("automatic_context_switch", True):
             # stop watching scene events
             self.__watcher.stop_watching()
-
-    def _init_pyside(self):
-        """
-        Handles the pyside init
-        """
-
-        # first see if pyside2 is present
-        try:
-            from PySide2 import QtGui
-        except:
-            # fine, we don't expect PySide2 to be present just yet
-            self.logger.debug("PySide2 not detected - trying for PySide now...")
-        else:
-            # looks like pyside2 is already working! No need to do anything
-            self.logger.debug(
-                "PySide2 detected - the existing version will be used."
-            )
-            return
-
-        # then see if pyside is present
-        try:
-            from PySide import QtGui
-        except:
-            # must be that a PySide version is not installed,
-            self.logger.debug(
-                "PySide not detected - it will be added to the setup now..."
-            )
-        else:
-            # looks like pyside is already working! No need to do anything
-            self.logger.debug(
-                "PySide detected - the existing version will be used."
-            )
-            return
-
-        current_os = sys.platform.lower()
-        if current_os == "darwin":
-            desktop_path = os.environ.get("SHOTGUN_DESKTOP_INSTALL_PATH",
-                                          "/Applications/Shotgun.app")
-            sys.path.append(os.path.join(desktop_path, "Contents", "Resources",
-                                         "Python", "lib", "python2.7",
-                                         "site-packages"))    
-
-        elif current_os == "win32":
-            desktop_path = os.environ.get("SHOTGUN_DESKTOP_INSTALL_PATH",
-                                          "C:/Program Files/Shotgun")
-            sys.path.append(os.path.join(desktop_path,
-                                         "Python", "Lib", "site-packages"))
-
-        elif current_os == "linux2":
-            desktop_path = os.environ.get("SHOTGUN_DESKTOP_INSTALL_PATH",
-                                          "/opt/Shotgun/Shotgun")
-            sys.path.append(os.path.join(desktop_path,
-                                         "Python", "Lib", "site-packages"))
-
-
-        else:
-            self.logger.error("Unknown platform - cannot initialize PySide!")
-
-        # now try to import it
-        try:
-            from PySide import QtGui
-        except Exception as exception:
-            traceback.print_exc()
-            self.logger.error(
-                "PySide could not be imported! Apps using pyside will not "
-                "operate correctly! Error reported: %s",
-                exception,
-            )
    
     def _win32_get_clarisse_main_hwnd(self):
         """
@@ -908,10 +833,11 @@ class ClarisseEngine(Engine):
             from sgtk.platform.qt import QtGui, QtCore
 
             # Create the proxy QWidget.
-            win32_proxy_win = QtGui.QWidget()
+            win32_proxy_win = self.tk_clarisse.ProxyWidget(
+                f=QtCore.Qt.FramelessWindowHint
+            )
             window_title = "Shotgun Toolkit Parent Widget"
             win32_proxy_win.setWindowTitle(window_title)
-            win32_proxy_win.setGeometry(20, 20, 50, 50)
 
             # We have to take different approaches depending on whether
             # we're using Qt4 (PySide) or Qt5 (PySide2). The functionality
@@ -929,14 +855,14 @@ class ClarisseEngine(Engine):
                 # it effectively invisible if we zero out its size, so we do that,
                 # show the widget, and then look up its HWND by window title before
                 # hiding it.
-                win32_proxy_win.setGeometry(0, 0, 0, 0)
+                win32_proxy_win.setGeometry(0,0,0,0)
                 win32_proxy_win.show()
 
                 try:
                     proxy_win_hwnd_found = self.win_32_api.find_windows(
-                        stop_if_found=True,
-                        class_name="Qt5QWindowIcon",
-                        process_id=os.getpid(),
+                        stop_if_found=False,
+                        class_name="Qt5150QWindowIcon",
+                        process_id=os.getpid()
                     )
                 finally:
                     win32_proxy_win.hide()
@@ -978,14 +904,50 @@ class ClarisseEngine(Engine):
 
         return win32_proxy_win
 
+    def set_proxy_size_to_hwnd(self):
+        win_size = self.win_32_api.get_win_size(self._WIN32_CLARISSE_MAIN_HWND)
+        self._DIALOG_PARENT.resize(
+            win_size.w >= 0 and win_size.w or 0,
+            win_size.h >= 0 and win_size.h or 0)
+        self._DIALOG_PARENT.move(0, 0)
+        
     def _get_dialog_parent(self):
         """
-        Clarisse is not Qt Based so we do not have anything to return here.
+        We are using a proxy parent system similar to tk-photoshopcc.
         """
         if not self._DIALOG_PARENT:
-            self._initialise_qapplication()
-            
+            if sys.platform == "win32":
+                # for windows, we create a proxy window parented to the
+                # main application window that we can then set as the owner
+                # for all Toolkit dialogs
+                self._DIALOG_PARENT = self._win32_get_proxy_window()
+            else:
+                self._DIALOG_PARENT = QtGui.QApplication.activeWindow()
+        
+        if sys.platform == "win32":
+            self.set_proxy_size_to_hwnd()
+        
         return self._DIALOG_PARENT
+
+    def show_dialog(self, title, bundle, widget_class, *args, **kwargs):
+        if not self.has_ui:
+            self.logger.error(
+                "Sorry, this environment does not support UI display! Cannot "
+                "show the requested window '%s'." % title
+            )
+            return None
+
+        # create the dialog:
+        dialog, widget = self._create_dialog_with_widget(
+            title, bundle, widget_class, *args, **kwargs
+        )
+
+        self.__qt_dialogs.append(dialog)
+
+        self.logger.debug("Showing dialog: {}".format(title))
+        dialog.show()
+
+        return widget
 
     @property
     def has_ui(self):

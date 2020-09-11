@@ -124,6 +124,10 @@ class MenuGenerator(object):
 
     def _add_menu_item(self, name, parent_menu_name, callback):
         menu_item = parent_menu_name + name
+        if name == "Reload and Restart":
+            # This is pretty ugly, but the default restart implimentation
+            # randomly crashes Clarisse so we have to hijack it somewhere
+            callback = self._engine._get_dialog_parent().restart_engine
         ix.shotgun.menu_callbacks[menu_item] = callback
         item = self._main_menu_handle.add_command_as_script(
             "ScriptingPython",
