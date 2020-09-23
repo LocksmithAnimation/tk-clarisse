@@ -16,19 +16,16 @@ import time
 import re
 import inspect
 import logging
-
+import traceback
 from functools import wraps, partial
 
 import tank
-import traceback
-
 from tank.log import LogManager
-
-
 from tank.platform import Engine
 from tank.platform.constants import SHOTGUN_ENGINE_NAME
-
 import ix
+
+from clarisse_core import pyside_clarisse
 
 
 __author__ = "Diego Garcia Huerta"
@@ -635,7 +632,7 @@ class ClarisseEngine(Engine):
             # Make the QApplication use the dark theme. Must be called after the QApplication is instantiated
             self._initialize_dark_look_and_feel()
 
-        self.tk_clarisse.pyside_clarisse.exec_(qt_app)
+        pyside_clarisse.exec_(qt_app)
 
     def post_app_init(self):
         """
