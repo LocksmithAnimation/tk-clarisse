@@ -10,4 +10,3 @@
 
 from .menu_generation import MenuGenerator
 from .proxy_widget import ProxyWidget
-from . import pyside_clarisse
