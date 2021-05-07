@@ -69,9 +69,7 @@ def show_info(msg):
 def display_error(msg):
     t = time.asctime(time.localtime())
     print("%s - Shotgun Error | Clarisse engine | %s " % (t, msg))
-    ix.application.log_error(
-        "%s - Shotgun Error | Clarisse engine | %s " % (t, msg)
-    )
+    ix.application.log_error("%s - Shotgun Error | Clarisse engine | %s " % (t, msg))
 
 
 def display_warning(msg):
@@ -83,17 +81,13 @@ def display_warning(msg):
 
 def display_info(msg):
     t = time.asctime(time.localtime())
-    ix.application.log_info(
-        "%s - Shotgun Info | Clarisse engine | %s " % (t, msg)
-    )
+    ix.application.log_info("%s - Shotgun Info | Clarisse engine | %s " % (t, msg))
 
 
 def display_debug(msg):
     if os.environ.get("TK_DEBUG") == "1":
         t = time.asctime(time.localtime())
-        ix.application.log_info(
-            "%s - Shotgun Debug | Clarisse engine | %s " % (t, msg)
-        )
+        ix.application.log_info("%s - Shotgun Debug | Clarisse engine | %s " % (t, msg))
 
 
 # we use a trick with decorators to get some sort of event notification
@@ -147,9 +141,9 @@ class SceneEventWatcher(object):
         Constructor.
 
         :param cb_fn: Callback to invoke everytime a scene event happens.
-        :param scene_events: List of scene events to watch for. Defaults to 
+        :param scene_events: List of scene events to watch for. Defaults to
             new, open and save.
-        :param run_once: If True, the watcher will notify only on the first 
+        :param run_once: If True, the watcher will notify only on the first
             event. Defaults to False.
         """
         self.__cb_fn = cb_fn
@@ -198,7 +192,7 @@ class SceneEventWatcher(object):
         """
         Stops watching the Clarisse scene.
         """
-        for event_name, event_fn in self.__wrapped_fns.iteritems():
+        for event_name, event_fn in self.__wrapped_fns.items():
             setattr(ix.application, event_name, event_fn._original)
         self.__wrapped_fns = {}
 
@@ -298,8 +292,7 @@ def on_scene_event_callback(engine_name, prev_context, menu_name):
         (exc_type, exc_value, exc_traceback) = sys.exc_info()
         message = ""
         message += (
-            "Message: Shotgun encountered a problem changing the "
-            "Engine's context.\n"
+            "Message: Shotgun encountered a problem changing the " "Engine's context.\n"
         )
         message += "Please contact you technical support team for more "
         message += "information.\n\n"
@@ -519,7 +512,7 @@ class ClarisseEngine(Engine):
             msg += "versions older than 3.6"
             raise tank.TankError(msg)
 
-        if clarisse_ver > 4.0:
+        if clarisse_ver > 5.0:
             # show a warning that this version of Clarisse isn't yet fully
             # tested with Shotgun:
             msg = (
@@ -532,8 +525,7 @@ class ClarisseEngine(Engine):
 
             # determine if we should show the compatibility warning dialog:
             show_warning_dlg = (
-                self.has_ui
-                and "SGTK_COMPATIBILITY_DIALOG_SHOWN" not in os.environ
+                self.has_ui and "SGTK_COMPATIBILITY_DIALOG_SHOWN" not in os.environ
             )
             if show_warning_dlg:
                 # make sure we only show it once per session:
@@ -542,10 +534,7 @@ class ClarisseEngine(Engine):
                 # split off the major version number - accomodate complex
                 # version strings and decimals:
                 major_version_number_str = clarisse_build_version.split(".")[0]
-                if (
-                    major_version_number_str
-                    and major_version_number_str.isdigit()
-                ):
+                if major_version_number_str and major_version_number_str.isdigit():
                     # check against the compatibility_dialog_min_version:
                     if int(major_version_number_str) < self.get_setting(
                         "compatibility_dialog_min_version"
@@ -628,7 +617,7 @@ class ClarisseEngine(Engine):
             qt_app = QtGui.QApplication([app_name])
             qt_app.setWindowIcon(QtGui.QIcon(self.icon_256))
             qt_app.setQuitOnLastWindowClosed(False)
-    
+
             # Make the QApplication use the dark theme. Must be called after the QApplication is instantiated
             self._initialize_dark_look_and_feel()
 
@@ -679,8 +668,7 @@ class ClarisseEngine(Engine):
 
             self.__watcher = SceneEventWatcher(cb_fn, run_once=False)
             self.logger.debug(
-                "Registered new open and save callbacks before"
-                " changing context."
+                "Registered new open and save callbacks before" " changing context."
             )
 
             # finally create the menu with the new context if needed
@@ -689,14 +677,14 @@ class ClarisseEngine(Engine):
 
     def _run_app_instance_commands(self):
         """
-        Runs the series of app instance commands listed in the 'run_at_startup' 
+        Runs the series of app instance commands listed in the 'run_at_startup'
         setting of the environment configuration yaml file.
         """
 
         # Build a dictionary mapping app instance names to dictionaries of
         # commands they registered with the engine.
         app_instance_commands = {}
-        for (command_name, value) in self.commands.iteritems():
+        for (command_name, value) in self.commands.items():
             app_instance = value["properties"].get("app")
             if app_instance:
                 # Add entry 'command name: command function' to the command
@@ -736,7 +724,7 @@ class ClarisseEngine(Engine):
                     for (
                         command_name,
                         command_function,
-                    ) in command_dict.iteritems():
+                    ) in command_dict.items():
                         self.logger.debug(
                             "%s startup running app '%s' command '%s'.",
                             self.name,
@@ -797,7 +785,7 @@ class ClarisseEngine(Engine):
         if self.get_setting("automatic_context_switch", True):
             # stop watching scene events
             self.__watcher.stop_watching()
-   
+
     def _win32_get_clarisse_main_hwnd(self):
         """
         Windows specific method to find the main Clarisse window
@@ -805,9 +793,7 @@ class ClarisseEngine(Engine):
         """
         if not self._WIN32_CLARISSE_MAIN_HWND:
             found_hwnds = self.win_32_api.find_windows(
-                process_id=os.getpid(),
-                class_name="FLTK",
-                stop_if_found=False
+                process_id=os.getpid(), class_name="FLTK", stop_if_found=False
             )
             if found_hwnds:
                 self._WIN32_CLARISSE_MAIN_HWND = found_hwnds[-1]
@@ -852,14 +838,14 @@ class ClarisseEngine(Engine):
                 # it effectively invisible if we zero out its size, so we do that,
                 # show the widget, and then look up its HWND by window title before
                 # hiding it.
-                win32_proxy_win.setGeometry(0,0,0,0)
+                win32_proxy_win.setGeometry(0, 0, 0, 0)
                 win32_proxy_win.show()
 
                 try:
                     proxy_win_hwnd_found = self.win_32_api.find_windows(
                         stop_if_found=False,
-                        class_name="Qt5150QWindowIcon",
-                        process_id=os.getpid()
+                        window_text="Shotgun Toolkit Parent Widget",
+                        process_id=os.getpid(),
                     )
                 finally:
                     win32_proxy_win.hide()
@@ -893,7 +879,7 @@ class ClarisseEngine(Engine):
 
             self.win_32_api.SetWindowLong(
                 proxy_win_hwnd,
-                self.win_32_api.GWL_EXSTYLE, 
+                self.win_32_api.GWL_EXSTYLE,
                 win_ex_style | self.win_32_api.WS_EX_NOPARENTNOTIFY,
             )
             self.win_32_api.SetParent(proxy_win_hwnd, sp_hwnd)
@@ -904,10 +890,10 @@ class ClarisseEngine(Engine):
     def set_proxy_size_to_hwnd(self):
         win_size = self.win_32_api.get_win_size(self._WIN32_CLARISSE_MAIN_HWND)
         self._DIALOG_PARENT.resize(
-            win_size.w >= 0 and win_size.w or 0,
-            win_size.h >= 0 and win_size.h or 0)
+            win_size.w >= 0 and win_size.w or 0, win_size.h >= 0 and win_size.h or 0
+        )
         self._DIALOG_PARENT.move(0, 0)
-        
+
     def _get_dialog_parent(self):
         """
         We are using a proxy parent system similar to tk-photoshopcc.
@@ -920,10 +906,10 @@ class ClarisseEngine(Engine):
                 self._DIALOG_PARENT = self._win32_get_proxy_window()
             else:
                 self._DIALOG_PARENT = QtGui.QApplication.activeWindow()
-        
+
         if sys.platform == "win32":
             self.set_proxy_size_to_hwnd()
-        
+
         return self._DIALOG_PARENT
 
     def show_dialog(self, title, bundle, widget_class, *args, **kwargs):
@@ -977,9 +963,7 @@ class ClarisseEngine(Engine):
         # where "basename" is the leaf part of the logging record name,
         # for example "tk-multi-shotgunpanel" or "qt_importer".
         if record.levelno < logging.INFO:
-            formatter = logging.Formatter(
-                "Debug: Shotgun %(basename)s: %(message)s"
-            )
+            formatter = logging.Formatter("Debug: Shotgun %(basename)s: %(message)s")
         else:
             formatter = logging.Formatter("Shotgun %(basename)s: %(message)s")
 

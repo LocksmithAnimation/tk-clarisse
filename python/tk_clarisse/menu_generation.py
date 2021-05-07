@@ -130,7 +130,7 @@ class MenuGenerator(object):
             callback = self._engine._get_dialog_parent().restart_engine
         ix.shotgun.menu_callbacks[menu_item] = callback
         item = self._main_menu_handle.add_command_as_script(
-            "ScriptingPython",
+            "ScriptingPython3",
             menu_item,
             'ix.shotgun.menu_callbacks["%s"]()' % menu_item,
             "",
